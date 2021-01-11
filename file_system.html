@@ -1,0 +1,162 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN"
+"http://www.w3.org/TR/html4/strict.dtd">
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8">
+<link rel="stylesheet" href="style.css" type="text/css">
+<title>file_system.html</title>
+</head>
+<body>
+<p>why3doc index <a href="index.html">index</a></p>
+<hr>
+<div class="why3doc">
+<pre><span class="keyword1">module</span> <a name="FileSystem_">FileSystem</a>
+
+<span class="keyword1">use</span> <span class="keyword1">export</span> int.Int
+<span class="keyword1">use</span> <span class="keyword1">import</span> map.<a href="map.html#Map_">Map</a> <span class="keyword1">as</span> M
+<span class="keyword1">use</span> <span class="keyword1">import</span> set.<a href="set.html#Fset_">Fset</a> <span class="keyword1">as</span> F
+<span class="keyword1">use</span> seq.<a href="seq.html#Seq_">Seq</a>, seq.<a href="seq.html#Mem_">Mem</a>, seq.<a href="seq.html#Distinct_">Distinct</a>
+
+<span class="comment">(* auxiliary lemmas on sequences *)</span>
+<span class="keyword1">lemma</span> <a name="append_empty_9">append_empty</a>: <span class="keyword1">forall</span> s: <a href="seq.html#seq_14">seq</a> 'a.
+  s <a href="seq.html#infix%20++_113">++</a> <a href="seq.html#empty_53">empty</a> <a href="seq.html#infix%20==_33">==</a> s
+
+<span class="keyword1">lemma</span> <a name="empty_length_12">empty_length</a>: <span class="keyword1">forall</span> s: <a href="seq.html#seq_14">seq</a> 'a.
+  <a href="seq.html#length_19">length</a> s = 0 &lt;-&gt; s <a href="seq.html#infix%20==_33">==</a> <a href="seq.html#empty_53">empty</a>
+
+<span class="keyword1">predicate</span> <a name="disjoint_seq_15">disjoint_seq</a> (s1 s2: <a href="seq.html#seq_14">seq</a> 'a) =
+  <span class="keyword1">forall</span> i j. 0 <a href="int.html#infix%20%3C=_25">&lt;=</a> i <a href="int.html#infix%20%3C_21">&lt;</a> <a href="seq.html#length_19">length</a> s1 -&gt;
+		0 <a href="int.html#infix%20%3C=_25">&lt;=</a> j <a href="int.html#infix%20%3C_21">&lt;</a> <a href="seq.html#length_19">length</a> s2 -&gt; s1[i] &lt;&gt; s2[j]
+
+<span class="comment">(* Arbitrary type for a tree node *)</span>
+<span class="keyword1">type</span> <a name="elt_20">elt</a>
+
+<span class="comment">(* Verifies if two nodes are equal *)</span>
+<span class="keyword1">val</span> <a name="equal_23">equal</a> (e1 e2 : <a href="#elt_20">elt</a>) : bool
+  <span class="keyword2">ensures</span> { result &lt;-&gt; e1 = e2 }
+
+<span class="comment">(* Indicates if two nodes are connected by an edge in the tree *)</span>
+<span class="keyword1">predicate</span> <a name="edge_27">edge</a> (x y : <a href="#elt_20">elt</a>) (f : <a href="#elt_20">elt</a> -&gt; <a href="#elt_20">elt</a>) =
+  x &lt;&gt; y /\ f x = y
+
+<span class="comment">(* recursive predicate for expressing a path between two nodes *)</span>
+<span class="comment">(* in the main text a few cosmetic changes were done, namely *)</span>
+<span class="comment">(* rename of -f- to -parent- and expand the edge definition *)</span>
+<span class="keyword1">predicate</span> <a name="path_33">path</a> (f: <a href="#elt_20">elt</a> -&gt; <a href="#elt_20">elt</a>) (x y: <a href="#elt_20">elt</a>) (p: <a href="seq.html#seq_14">seq</a> <a href="#elt_20">elt</a>) =
+  <span class="keyword1">let</span> n = <a href="seq.html#length_19">length</a> p <span class="keyword1">in</span>
+  n = 0 /\ x = y
+  \/
+  n <a href="int.html#infix%20%3E_24">&gt;</a> 0 /\
+  p[0] = x /\
+  <a href="#edge_27">edge</a> p[n <a href="int.html#infix%20-_23">-</a> 1] y f /\
+  <a href="seq.html#distinct_319">distinct</a> p /\
+  (<span class="keyword1">forall</span> i. 0 <a href="int.html#infix%20%3C=_25">&lt;=</a> i <a href="int.html#infix%20%3C_21">&lt;</a> n <a href="int.html#infix%20-_23">-</a> 1 -&gt; <a href="#edge_27">edge</a> p[i] p[i <a href="int.html#infix%20+_19">+</a> 1] f) /\
+  (<span class="keyword1">forall</span> i. 0 <a href="int.html#infix%20%3C=_25">&lt;=</a> i <a href="int.html#infix%20%3C_21">&lt;</a> n     -&gt; p[i] &lt;&gt; y)
+
+<span class="keyword1">predicate</span> <a name="reachability_44">reachability</a> (f: <a href="#elt_20">elt</a> -&gt; <a href="#elt_20">elt</a>) (x y: <a href="#elt_20">elt</a>) =
+  <span class="keyword1">exists</span> p. <a href="#path_33">path</a> f x y p
+
+<span class="comment">(* If there is an edge between nodes x and y
+ the path is defined as the singleton seq with node x  *)</span>
+<span class="keyword1">axiom</span> <a name="path_to_parent_49">path_to_parent</a>: <span class="keyword1">forall</span> x y : <a href="#elt_20">elt</a>, f : <a href="#elt_20">elt</a> -&gt; <a href="#elt_20">elt</a>.
+  <a href="#edge_27">edge</a> x y f -&gt; <a href="#path_33">path</a> f x y (<a href="seq.html#cons_79">cons</a> x <a href="seq.html#empty_53">empty</a>)
+
+<span class="comment">(* If there is a path from [from] to [middle] and a path from [middle] to 
+  [until] then there is a path from [from] to [until] *)</span>
+<span class="keyword1">axiom</span> <a name="path_transitivity_54">path_transitivity</a>: <span class="keyword1">forall</span> from middle until f pth1 pth2.
+  <a href="#path_33">path</a> f from middle pth1 -&gt; <a href="#path_33">path</a> f middle until pth2 -&gt;
+  <a href="#disjoint_seq_15">disjoint_seq</a> pth1 pth2 -&gt; from &lt;&gt; until -&gt;
+  (<span class="keyword1">forall</span> j. 0 <a href="int.html#infix%20%3C=_25">&lt;=</a> j <a href="int.html#infix%20%3C_21">&lt;</a> <a href="seq.html#length_19">length</a> pth1 -&gt; pth1[j] &lt;&gt; until) -&gt;
+	<a href="#path_33">path</a> f from until (pth1 <a href="seq.html#infix%20++_113">++</a> pth2)
+
+<span class="comment">(* Recursive path composition *)</span>
+<span class="keyword1">axiom</span> <a name="path_composition_61">path_composition</a>: <span class="keyword1">forall</span> n x y: <a href="#elt_20">elt</a>, f : <a href="#elt_20">elt</a> -&gt; <a href="#elt_20">elt</a>, pth : <a href="seq.html#seq_14">seq</a> <a href="#elt_20">elt</a>.
+  n &lt;&gt; y -&gt; <span class="keyword1">not</span> (<a href="seq.html#mem_303">mem</a> y pth) -&gt;
+  <a href="seq.html#distinct_319">distinct</a> (<a href="seq.html#snoc_86">snoc</a> pth x) -&gt; <a href="#path_33">path</a> f n x pth -&gt; <a href="#edge_27">edge</a> x y f -&gt;
+  <a href="#path_33">path</a> f n y (<a href="seq.html#snoc_86">snoc</a> pth x)
+
+ <span class="comment">(* If there is a path between two nodes, that path is unique *)</span>
+<span class="keyword1">axiom</span> <a name="path_uniqueness_67">path_uniqueness</a>: <span class="keyword1">forall</span> x y: <a href="#elt_20">elt</a>, f: <a href="#elt_20">elt</a> -&gt; <a href="#elt_20">elt</a>,
+			      pth1 pth2: <a href="seq.html#seq_14">seq</a> <a href="#elt_20">elt</a>.
+  <a href="#path_33">path</a> f x y pth1 -&gt; <a href="#path_33">path</a> f x y pth2 -&gt; pth1 <a href="seq.html#infix%20==_33">==</a> pth2
+
+ <span class="comment">(* If node np is not reachable to node c, then np will
+    not belong to any path that contains node c *)</span>
+<span class="keyword1">axiom</span> <a name="path_exclusion_73">path_exclusion</a>: <span class="keyword1">forall</span> f x c np p.
+  <span class="keyword1">not</span> (<a href="#reachability_44">reachability</a> f np c) -&gt; <a href="#path_33">path</a> f x c p -&gt; <span class="keyword1">not</span> (<a href="seq.html#mem_303">mem</a> np p)
+
+ <span class="comment">(* Given a path between two nodes, there is no overlap between any two consecutive subpaths *)</span>
+<span class="keyword1">axiom</span> <a name="path_separation_77">path_separation</a>: <span class="keyword1">forall</span> final initial middle : <a href="#elt_20">elt</a>, f : <a href="#elt_20">elt</a> -&gt; <a href="#elt_20">elt</a>,
+		       	      p1 p2 : <a href="seq.html#seq_14">seq</a> <a href="#elt_20">elt</a>.
+  <a href="#path_33">path</a> f middle final p2 -&gt; <a href="#path_33">path</a> f initial middle p1 -&gt;
+  final &lt;&gt; initial -&gt; middle &lt;&gt; initial -&gt; middle &lt;&gt; final -&gt;
+  <a href="#disjoint_seq_15">disjoint_seq</a> p1 p2
+
+<span class="keyword1">constant</span> <a name="n_83">n</a>: <a href="#elt_20">elt</a> <span class="comment">(* constant used for defining a state witness *)</span>
+
+<span class="keyword1">type</span> <a name="state_85">state</a> [@state] = {
+  <span class="comment">(* parent relation: up-pointers to direct ancestor *)</span>
+  <span class="keyword1">mutable</span> <a name="parent_87">parent</a> : <a href="#elt_20">elt</a> -&gt; <a href="#elt_20">elt</a>;
+  <span class="comment">(* parent root *)</span>
+  <span class="keyword1">mutable</span> <a name="root_89">root</a> 	 : <a href="#elt_20">elt</a>;
+  <span class="comment">(* nodes in the parent *)</span>
+  <span class="keyword1">mutable</span> <a name="nodes_91">nodes</a>  : <a href="set.html#fset_238">fset</a> <a href="#elt_20">elt</a>;
+} <span class="keyword2">invariant</span> { F.<a href="set.html#mem_244">mem</a> root nodes }
+  <span class="keyword2">invariant</span> { parent root = root }
+  <span class="keyword2">invariant</span> { <span class="keyword1">forall</span> x. F.<a href="set.html#mem_244">mem</a> x nodes -&gt; F.<a href="set.html#mem_244">mem</a> (parent x) nodes }
+  <span class="keyword2">invariant</span> { <span class="keyword1">forall</span> x. F.<a href="set.html#mem_244">mem</a> x nodes -&gt; <a href="#reachability_44">reachability</a> parent x root }
+  <span class="keyword2">invariant</span> { <span class="keyword1">forall</span> x. F.<a href="set.html#mem_244">mem</a> x nodes -&gt;
+  		<a href="#reachability_44">reachability</a> parent root x -&gt; x = root }
+  <span class="keyword1">by</span> { parent = (<span class="keyword1">fun</span> _ -&gt; <a href="#n_83">n</a>); root = <a href="#n_83">n</a>; nodes = F.<a href="set.html#singleton_277">singleton</a> <a href="#n_83">n</a> }
+
+<span class="comment">(* Paths already present in the tree remain in the tree after executing 
+   the add operation *)</span>
+<span class="keyword1">axiom</span> <a name="remaining_nodes_add_102">remaining_nodes_add</a>: <span class="keyword1">forall</span> n w p: <a href="#elt_20">elt</a>, s: <a href="#state_85">state</a>, l: <a href="seq.html#seq_14">seq</a> <a href="#elt_20">elt</a>.
+  <a href="#path_33">path</a> s.<a href="#parent_87">parent</a> w s.<a href="#root_89">root</a> l -&gt; <span class="keyword1">not</span> (<a href="seq.html#mem_303">mem</a> n l) -&gt;
+  F.<a href="set.html#mem_244">mem</a> w s.<a href="#nodes_91">nodes</a> -&gt; F.<a href="set.html#mem_244">mem</a> p s.<a href="#nodes_91">nodes</a> -&gt; <span class="keyword1">not</span> (F.<a href="set.html#mem_244">mem</a> n s.<a href="#nodes_91">nodes</a>) -&gt;
+  w &lt;&gt; n -&gt; n &lt;&gt; p -&gt; <a href="#path_33">path</a> (M.<a href="map.html#set_13">set</a> s.<a href="#parent_87">parent</a> n p) w s.<a href="#root_89">root</a> l
+
+<span class="comment">(* Descendants of the node being moved continue to be its descendants *)</span>
+<span class="keyword1">axiom</span> <a name="descendants_move_108">descendants_move</a>: <span class="keyword1">forall</span> x c np: <a href="#elt_20">elt</a>, f: <a href="#elt_20">elt</a> -&gt; <a href="#elt_20">elt</a>, p: <a href="seq.html#seq_14">seq</a> <a href="#elt_20">elt</a>.
+  x &lt;&gt; np -&gt; c &lt;&gt; np -&gt; x &lt;&gt; c -&gt; <span class="keyword1">not</span> (<a href="#reachability_44">reachability</a> f np c) -&gt;
+  <a href="#path_33">path</a> f x c p -&gt; <a href="seq.html#distinct_319">distinct</a> (<a href="seq.html#cons_79">cons</a> c p) -&gt; <span class="keyword1">not</span> (<a href="seq.html#mem_303">mem</a> np p) -&gt;
+  (<a href="#path_33">path</a> (M.<a href="map.html#set_13">set</a> f c np) x c p)
+
+<span class="comment">(*  Paths nodes unreachable to the node being moved are not affected *)</span>
+<span class="keyword1">axiom</span> <a name="remaining_nodes_move_114">remaining_nodes_move</a>: <span class="keyword1">forall</span> x c np: <a href="#elt_20">elt</a>, s: <a href="#state_85">state</a>, p: <a href="seq.html#seq_14">seq</a> <a href="#elt_20">elt</a>.
+  c &lt;&gt; np -&gt; x &lt;&gt; c -&gt; <span class="keyword1">not</span> (<a href="#reachability_44">reachability</a> s.<a href="#parent_87">parent</a> np c) -&gt;
+  <a href="#path_33">path</a> s.<a href="#parent_87">parent</a> x s.<a href="#root_89">root</a> p -&gt; (<span class="keyword1">not</span> <a href="#reachability_44">reachability</a> s.<a href="#parent_87">parent</a> x c) -&gt;
+  <a href="seq.html#distinct_319">distinct</a> p -&gt; (<a href="#path_33">path</a> (M.<a href="map.html#set_13">set</a> s.<a href="#parent_87">parent</a> c np) x s.<a href="#root_89">root</a> p)
+
+<span class="keyword1">let</span> <span class="keyword1">ghost</span> <a name="add_119">add</a> (n p : <a href="#elt_20">elt</a>) (s : <a href="#state_85">state</a>) : unit
+  <span class="keyword2">requires</span> { [@expl:pre_add1] <span class="keyword1">not</span> F.<a href="set.html#mem_244">mem</a> n s.<a href="#nodes_91">nodes</a> }
+  <span class="keyword2">requires</span> { [@expl:pre_add2] F.<a href="set.html#mem_244">mem</a> p s.<a href="#nodes_91">nodes</a> }
+  <span class="keyword2">ensures</span>  { s.<a href="#parent_87">parent</a> = M.<a href="map.html#set_13">set</a> (<span class="keyword1">old</span> s.<a href="#parent_87">parent</a>) n p }
+  <span class="keyword2">ensures</span>  { <a href="#edge_27">edge</a> n p s.<a href="#parent_87">parent</a> }
+  <span class="keyword2">ensures</span>  { s.<a href="#nodes_91">nodes</a> = F.<a href="set.html#add_273">add</a> n (<span class="keyword1">old</span> s).<a href="#nodes_91">nodes</a> }
+= s.<a href="#parent_87">parent</a>     &lt;- M.<a href="map.html#set_13">set</a> s.<a href="#parent_87">parent</a> n p;
+  s.<a href="#nodes_91">nodes</a>      &lt;- F.<a href="set.html#add_273">add</a> n s.<a href="#nodes_91">nodes</a>
+
+<span class="keyword1">let</span> <span class="keyword1">ghost</span> <a name="remove_128">remove</a> (n : <a href="#elt_20">elt</a>) (s : <a href="#state_85">state</a>) : unit
+  <span class="keyword2">requires</span> { [@expl:pre_remove1] <span class="keyword1">forall</span> x. s.<a href="#parent_87">parent</a> x &lt;&gt; n }
+  <span class="keyword2">requires</span> { [@expl:pre_remove2] n &lt;&gt; s.<a href="#root_89">root</a> }
+  <span class="keyword2">ensures</span>  { s.<a href="#nodes_91">nodes</a> = F.<a href="set.html#remove_283">remove</a> n (<span class="keyword1">old</span> s).<a href="#nodes_91">nodes</a> }
+= s.<a href="#nodes_91">nodes</a> &lt;- F.<a href="set.html#remove_283">remove</a> n s.<a href="#nodes_91">nodes</a>
+
+<span class="keyword1">let</span> <span class="keyword1">ghost</span> <a name="move_134">move</a> (c np : <a href="#elt_20">elt</a>) (s : <a href="#state_85">state</a>) : unit
+  <span class="keyword2">requires</span> { [@expl:pre_move1] F.<a href="set.html#mem_244">mem</a> np s.<a href="#nodes_91">nodes</a> }
+  <span class="keyword2">requires</span> { [@expl:pre_move2] F.<a href="set.html#mem_244">mem</a> c s.<a href="#nodes_91">nodes</a>}
+  <span class="keyword2">requires</span> { [@expl:pre_move3] <span class="keyword1">not</span> (<a href="#reachability_44">reachability</a> s.<a href="#parent_87">parent</a> np c) }
+  <span class="keyword2">requires</span> { [@expl:pre_move4] c &lt;&gt; s.<a href="#root_89">root</a> }
+  <span class="keyword2">requires</span> { [@expl:pre_move5] c &lt;&gt; np }
+  <span class="keyword2">ensures</span>  { <a href="#edge_27">edge</a> c np s.<a href="#parent_87">parent</a> }
+  <span class="keyword2">ensures</span>  { s.<a href="#parent_87">parent</a> = M.<a href="map.html#set_13">set</a> (<span class="keyword1">old</span> s.<a href="#parent_87">parent</a>) c np }
+= s.<a href="#parent_87">parent</a> &lt;- M.<a href="map.html#set_13">set</a> s.<a href="#parent_87">parent</a> c np
+
+<span class="keyword1">end</span></pre>
+
+</div>
+<hr>
+<p>Generated by why3doc 1.3.1+git</p>
+</body>
+</html>
