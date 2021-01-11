@@ -1,0 +1,144 @@
+module FileSystem
+
+use export int.Int
+use import map.Map as M
+use import set.Fset as F
+use seq.Seq, seq.Mem, seq.Distinct
+
+(* auxiliary lemmas on sequences *)
+lemma append_empty: forall s: seq 'a.
+  s ++ empty == s
+
+lemma empty_length: forall s: seq 'a.
+  length s = 0 <-> s == empty
+  
+predicate disjoint_seq (s1 s2: seq 'a) =
+  forall i j. 0 <= i < length s1 ->
+		0 <= j < length s2 -> s1[i] <> s2[j]
+
+(* Arbitrary type for a tree node *)
+type elt
+
+(* Verifies if two nodes are equal *)
+val equal (e1 e2 : elt) : bool
+  ensures { result <-> e1 = e2 }
+
+(* Indicates if two nodes are connected by an edge in the tree *)
+predicate edge (x y : elt) (f : elt -> elt) =
+  x <> y /\ f x = y
+
+(* recursive predicate for expressing a path between two nodes *)
+(* in the main text a few cosmetic changes were done, namely *)
+(* rename of -f- to -parent- and expand the edge definition *)
+predicate path (f: elt -> elt) (x y: elt) (p: seq elt) =
+  let n = length p in
+  n = 0 /\ x = y
+  \/
+  n > 0 /\
+  p[0] = x /\
+  edge p[n - 1] y f /\
+  distinct p /\
+  (forall i. 0 <= i < n - 1 -> edge p[i] p[i + 1] f) /\
+  (forall i. 0 <= i < n     -> p[i] <> y)
+
+predicate reachability (f: elt -> elt) (x y: elt) =
+  exists p. path f x y p
+
+(* If there is an edge between nodes x and y
+ the path is defined as the singleton seq with node x  *)
+axiom path_to_parent: forall x y : elt, f : elt -> elt.
+  edge x y f -> path f x y (cons x empty)
+ 
+(* If there is a path from [from] to [middle] and a path from [middle] to 
+  [until] then there is a path from [from] to [until] *)
+axiom path_transitivity: forall from middle until f pth1 pth2.
+  path f from middle pth1 -> path f middle until pth2 ->
+  disjoint_seq pth1 pth2 -> from <> until ->
+  (forall j. 0 <= j < length pth1 -> pth1[j] <> until) ->
+	path f from until (pth1 ++ pth2)
+	
+(* Recursive path composition *)
+axiom path_composition: forall n x y: elt, f : elt -> elt, pth : seq elt.
+  n <> y -> not (mem y pth) ->
+  distinct (snoc pth x) -> path f n x pth -> edge x y f ->
+  path f n y (snoc pth x)
+  
+ (* If there is a path between two nodes, that path is unique *)
+axiom path_uniqueness: forall x y: elt, f: elt -> elt, 
+			      pth1 pth2: seq elt.
+  path f x y pth1 -> path f x y pth2 -> pth1 == pth2
+  
+ (* If node np is not reachable to node c, then np will
+    not belong to any path that contains node c *)
+axiom path_exclusion: forall f x c np p.
+  not (reachability f np c) -> path f x c p -> not (mem np p)
+
+ (* Given a path between two nodes, there is no overlap between any two consecutive subpaths *)
+axiom path_separation: forall final initial middle : elt, f : elt -> elt,
+		       	      p1 p2 : seq elt.
+  path f middle final p2 -> path f initial middle p1 ->
+  final <> initial -> middle <> initial -> middle <> final ->
+  disjoint_seq p1 p2
+
+constant n: elt (* constant used for defining a state witness *)
+
+type state [@state] = {
+  (* parent relation: up-pointers to direct ancestor *)
+  mutable parent : elt -> elt;
+  (* parent root *)
+  mutable root 	 : elt;
+  (* nodes in the parent *)
+  mutable nodes  : fset elt;
+} invariant { F.mem root nodes }
+  invariant { parent root = root }
+  invariant { forall x. F.mem x nodes -> F.mem (parent x) nodes }
+  invariant { forall x. F.mem x nodes -> reachability parent x root }
+  invariant { forall x. F.mem x nodes -> 
+  		reachability parent root x -> x = root }
+  by { parent = (fun _ -> n); root = n; nodes = F.singleton n }
+
+(* Paths already present in the tree remain in the tree after executing 
+   the add operation *)
+axiom remaining_nodes_add: forall n w p: elt, s: state, l: seq elt.
+  path s.parent w s.root l -> not (mem n l) ->
+  F.mem w s.nodes -> F.mem p s.nodes -> not (F.mem n s.nodes) ->
+  w <> n -> n <> p -> path (M.set s.parent n p) w s.root l
+
+(* Descendants of the node being moved continue to be its descendants *)
+axiom descendants_move: forall x c np: elt, f: elt -> elt, p: seq elt.
+  x <> np -> c <> np -> x <> c -> not (reachability f np c) ->
+  path f x c p -> distinct (cons c p) -> not (mem np p) ->
+  (path (M.set f c np) x c p)
+
+(*  Paths nodes unreachable to the node being moved are not affected *)
+axiom remaining_nodes_move: forall x c np: elt, s: state, p: seq elt.
+  c <> np -> x <> c -> not (reachability s.parent np c) ->
+  path s.parent x s.root p -> (not reachability s.parent x c) ->
+  distinct p -> (path (M.set s.parent c np) x s.root p)
+  
+let ghost add (n p : elt) (s : state) : unit
+  requires { [@expl:pre_add1] not F.mem n s.nodes }
+  requires { [@expl:pre_add2] F.mem p s.nodes }
+  ensures  { s.parent = M.set (old s.parent) n p }
+  ensures  { edge n p s.parent }
+  ensures  { s.nodes = F.add n (old s).nodes }
+= s.parent     <- M.set s.parent n p;
+  s.nodes      <- F.add n s.nodes
+
+let ghost remove (n : elt) (s : state) : unit
+  requires { [@expl:pre_remove1] forall x. s.parent x <> n }
+  requires { [@expl:pre_remove2] n <> s.root }
+  ensures  { s.nodes = F.remove n (old s).nodes }
+= s.nodes <- F.remove n s.nodes
+
+let ghost move (c np : elt) (s : state) : unit
+  requires { [@expl:pre_move1] F.mem np s.nodes }
+  requires { [@expl:pre_move2] F.mem c s.nodes}
+  requires { [@expl:pre_move3] not (reachability s.parent np c) }
+  requires { [@expl:pre_move4] c <> s.root }
+  requires { [@expl:pre_move5] c <> np }
+  ensures  { edge c np s.parent }
+  ensures  { s.parent = M.set (old s.parent) c np }
+= s.parent <- M.set s.parent c np
+
+end
